@@ -4,7 +4,19 @@
 
 ## 1. Problem Statement
 
-We need to monitor ~10 production ML models across drift, performance, feature importance, and alerting for a 30-person Risk Data Science team. The default instinct is a "model tile grid" (Okta-style homepage) — but that pattern optimizes for *selection*, not *monitoring*. We need a design that surfaces **what needs attention** without forcing users to click into each model.
+We need to monitor ~10 production ML models across drift, performance, feature importance, and alerting for a 30-person Risk Data Science team. An existing monitoring library already computes metrics and writes them to Snowflake — this dashboard **visualizes that pre-computed data**, it doesn't recompute anything.
+
+### Key domain constraints
+
+- **Variable cadences**: Models score at different frequencies (daily, weekly, monthly, ad hoc). The dashboard cannot assume uniform time steps.
+- **Delayed actuals**: In financial services, outcomes (defaults, losses) lag scoring by weeks to months. Performance metrics are often *estimates* until actuals arrive. The dashboard must clearly distinguish estimated vs. confirmed metrics and show how stale the actuals are.
+- **Four data categories** per model run:
+  - *Summary Statistics* — feature-level distributional summaries
+  - *Data Quality* — missing rates, out-of-range, cardinality shifts
+  - *Drift Metrics* — PSI, KS, chi-squared, JS divergence vs. reference
+  - *Monitoring Metrics / Estimates* — AUC, KS, Gini (often estimated)
+
+The default instinct is a "model tile grid" (Okta-style homepage) — but that pattern optimizes for *selection*, not *monitoring*. We need a design that surfaces **what needs attention** without forcing users to click into each model.
 
 ## 2. Anti-Patterns to Avoid
 
@@ -70,13 +82,17 @@ Combine the best elements:
 │  HEADER: TFS Branding + Date Range Selector                │
 ├────────────┬────────────────────────────────────────────────┤
 │            │  STATUS BAR: All models, color-coded health    │
+│            │  (includes last-run timestamp + cadence badge) │
 │            ├────────────────────────────────────────────────┤
 │  SIDEBAR   │  ALERT FEED: Recent events, filterable        │
-│  - Filters │────────────────────────────────────────────────┤
-│  - Model   │  DETAIL PANEL: Selected model deep dive       │
-│    groups  │  - Drift heat map (feature × time)            │
-│  - Views   │  - Performance sparklines                     │
-│            │  - Feature importance rank chart               │
+│  - Filters │  (drift, quality, performance, staleness)     │
+│  - Model   │────────────────────────────────────────────────┤
+│    groups  │  DETAIL PANEL: Selected model deep dive       │
+│  - Cadence │  - Drift heat map (feature × time)            │
+│    filter  │  - Performance sparklines (estimated vs.      │
+│  - Views   │    confirmed badges)                          │
+│            │  - Data quality summary                       │
+│            │  - Actuals horizon indicator                   │
 │            │  - Threshold status indicators                 │
 └────────────┴────────────────────────────────────────────────┘
 ```
@@ -119,10 +135,10 @@ Combine the best elements:
 ### Option A: Single-Page with Tab Sections (Recommended for Streamlit)
 
 ```
-Overview (landing) → Drift → Performance → Features → Alerts → Config
+Overview (landing) → Summary Stats → Data Quality → Drift → Performance → Alerts → Config
 ```
 
-Each tab shows all models for that concern. The sidebar provides model filtering.
+Each tab shows all models for that concern. Maps directly to the four metric categories from the monitoring library, plus an overview and alerts/config layer. The sidebar provides model and cadence filtering.
 
 ### Option B: Two-Level Navigation
 
@@ -143,6 +159,9 @@ Level 2 (within page): Model selector / filter
 4. **Progressive disclosure**: Summary → detail. Never force users to drill down to see status
 5. **Anomaly-first**: Visual design should make deviations from normal immediately obvious
 6. **Consistent scales**: When comparing models, always use the same y-axis range
+7. **Cadence-aware time axes**: Always plot against calendar time, never run index. Irregular cadences must be visually obvious (e.g., gaps in sparklines)
+8. **Actuals transparency**: Every performance metric must show whether it's estimated or confirmed, and when actuals were last available
+9. **Freshness-first**: Show each model's last-run timestamp, scoring frequency, and data staleness prominently — stale data is the most common silent failure
 
 ## 7. Next Steps
 

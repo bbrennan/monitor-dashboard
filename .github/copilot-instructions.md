@@ -8,6 +8,18 @@ The production environment uses **Snowflake**. Any architecture decisions must b
 
 Monitors ~10 production ML models for data drift, performance degradation, feature importance shifts, and threshold-based alerting.
 
+## Data Model
+
+An existing model monitoring library writes pre-computed metrics to Snowflake on each model's scoring cadence. Models run at **different cadences** (daily, weekly, monthly, ad hoc). The dashboard reads this data — it does not compute metrics from raw predictions.
+
+Four metric categories are stored per model run:
+- **Summary Statistics**: distributional summaries per feature (mean, median, std, quantiles, counts)
+- **Data Quality**: missing rates, out-of-range values, cardinality shifts, schema drift
+- **Drift Metrics**: PSI, KS, chi-squared, Jensen-Shannon divergence vs. reference/training distributions
+- **Monitoring Metrics / Estimates**: estimated performance metrics (AUC, KS, Gini, etc.) — often *estimated* because actuals are delayed
+
+**Delayed actuals are the norm.** In financial services, outcomes (defaults, losses) may lag scoring by weeks to months. The dashboard must handle models where actuals are never current: show estimated/proxy metrics, flag staleness, and distinguish estimated vs. confirmed performance.
+
 ## Branding
 
 - Toyota Financial Services (TFS) branding
@@ -62,5 +74,7 @@ make run           # Launch dashboard locally
 - **DataFrames**: Prefer polars over pandas for new code. Existing pandas code does not need to be migrated.
 - **Configuration**: Use environment variables for secrets, YAML files for model/threshold configs.
 - **Error handling**: Fail fast with clear messages. Dashboard pages should show graceful error states, not crash.
-- **Data layer**: Must be designed to work with Snowflake. Use synthetic/local data for development; real queries happen against Snowflake in production.
+- **Data layer**: Dashboard reads pre-computed monitoring data — it does not compute metrics from raw data. Must be designed to work with Snowflake. Use synthetic/local data for development; real queries happen against Snowflake in production.
 - **Local development**: Use synthetic data generators and local fixtures — never depend on network access to run the dashboard locally.
+- **Model cadences**: Never assume uniform scoring cadence. Each model's last-run timestamp, scoring frequency, and data freshness must be visible.
+- **Actuals lag**: Always distinguish estimated/proxy metrics from confirmed (actuals-based) metrics. Show the actuals horizon and staleness clearly.
