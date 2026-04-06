@@ -192,25 +192,51 @@ Each level is revealed on demand — no persona sees more complexity than they n
 - Subtle shadows only on elevated panels
 - Professional but approachable — CRO and model owner both feel at home
 
-## 5. Navigation Architecture
+## 5. View Hierarchy & Navigation
 
-### Recommended: Two-level progressive disclosure
+The hierarchy follows the **investigation flow**, not the data categories.
 
 ```
-Landing: Portfolio Overview (all models, ranked by health)
-  └─→ Model Summary Page (single-page, scrollable, large panels)
-        └─→ Feature Detail (expandable sections within model page)
+PORTFOLIO OVERVIEW (all models)
+│
+├─ MODEL SUMMARY (one model, single page, scrollable)
+│   ├─ Score Health       — PSI, score distribution overlay, trend
+│   ├─ Performance        — Estimates (CPBE/RBE) + Confirmed (when actuals exist)
+│   ├─ Feature Drift      — CSI rankings, top movers
+│   ├─ Data Quality       — Missing rates, out-of-range, schema
+│   └─ Model Info         — Baseline period, cadence, owner, feature count
+│
+├─ FEATURE MONITOR (drill-down from model summary)
+│   ├─ All Features       — Ranked by CSI, filterable, data quality flags
+│   └─ Single Feature     — Distribution overlay, bin-level CSI, summary stats, DQ timeline
+│
+├─ PERFORMANCE DEEP DIVE (drill-down from model summary)
+│   ├─ Estimates          — CPBE, RBE trends over time, confidence bands
+│   ├─ Confirmed          — AUC, KS, Gini, lift (when actuals available)
+│   └─ Backtesting        — Vintage analysis, actual vs. predicted over outcome windows
+│
+└─ ALERTS & CONFIG
+    ├─ Alert History       — What fired, when, which model, severity
+    └─ Threshold Config    — Per-model threshold overrides
 ```
 
-**Sidebar** (always visible):
+### Key navigation decisions
+
+- **Trends are not a separate view** — every metric panel has a configurable time window
+  (last N runs, last 30/90/180 days, custom). The time selector is a global control.
+- **The model summary is the hub** — shows everything at a glance with enough detail
+  for the VP/validation analyst. Feature monitor and performance deep dive are spokes.
+- **Score distribution overlay** is not just PSI as a number — show the actual baseline vs.
+  current histogram on the same axes, so users see *how* the score shifted.
+- **Model metadata** (baseline period, cadence, owner, feature list) is reference info
+  that validators need, especially when diagnosing issues.
+
+### Sidebar (always visible)
+
 - Model list (sorted by health, color-coded)
 - Cadence filter (daily / weekly / monthly)
 - Domain filter (if models are grouped by business line)
-
-**This is NOT tab-per-concern navigation.** Instead:
-- The Portfolio Overview shows health across all concerns (PSI, performance, quality)
-- The Model Summary shows all concerns for one model on a single page
-- This matches the WhyLabs/Fiddler pattern the team prefers
+- Global time window selector
 
 ## 6. Key Design Principles
 
@@ -226,9 +252,7 @@ Landing: Portfolio Overview (all models, ranked by health)
 
 ## 7. Next Steps
 
-- [ ] Build the Portfolio Overview page in Streamlit
-- [ ] Build the Model Summary page (single-page, large panels)
+- [ ] Build interactive Streamlit mockups for each view level
 - [ ] Implement PSI-first layout with CSI drill-down
 - [ ] Design the "estimated vs. confirmed" performance indicator
 - [ ] Create synthetic data generator for ~10 models with mixed cadences
-- [ ] Choose chart library (Plotly recommended for interactive)
