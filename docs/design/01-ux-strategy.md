@@ -4,7 +4,20 @@
 
 ## 1. Problem Statement
 
-We need to monitor ~10 production ML models across drift, performance, feature importance, and alerting for a 30-person Risk Data Science team. An existing monitoring library already computes metrics and writes them to Snowflake — this dashboard **visualizes that pre-computed data**, it doesn't recompute anything.
+We need to monitor ~10 production ML models across drift, performance, feature importance, and alerting for the Risk Data Science org at Toyota Financial Services. An existing monitoring library already computes metrics and writes them to Snowflake — this dashboard **visualizes that pre-computed data**, it doesn't recompute anything.
+
+This is a **"morning coffee" tool** — anyone in the org should be able to log in, scan the portfolio, and know in under a minute whether anything needs attention.
+
+### Personas (progressive disclosure)
+
+| Persona | Need | Depth | Frequency |
+|---------|------|-------|-----------|
+| **CRO** | Portfolio health at a glance. Red/yellow/green. No jargon. | Summary only | Weekly |
+| **VP** | Which models need attention? Any trends? | Summary + trends | Daily |
+| **Model Validation Analyst** | Review models in their domain. Compare across models. | Domain-level metrics | Daily |
+| **Model Owner (SME)** | Deep dive into their model. Feature-level forensics. Why did PSI shift? | Full detail | Daily |
+
+The design must serve *all four* through progressive disclosure — the same landing page, with detail revealed on demand.
 
 ### Key domain constraints
 
@@ -13,10 +26,29 @@ We need to monitor ~10 production ML models across drift, performance, feature i
 - **Four data categories** per model run:
   - *Summary Statistics* — feature-level distributional summaries
   - *Data Quality* — missing rates, out-of-range, cardinality shifts
-  - *Drift Metrics* — PSI, KS, chi-squared, JS divergence vs. reference
+  - *Drift Metrics* — PSI, CSI, KS, chi-squared, JS divergence vs. baseline
   - *Monitoring Metrics / Estimates* — AUC, KS, Gini (often estimated)
 
-The default instinct is a "model tile grid" (Okta-style homepage) — but that pattern optimizes for *selection*, not *monitoring*. We need a design that surfaces **what needs attention** without forcing users to click into each model.
+### PSI-first investigation workflow
+
+Users almost always supply a **model score** at onboarding. The natural investigation flow is:
+
+```
+1. Score PSI  → Did the overall model score distribution shift?
+   │
+   ├─ YES → 2. Feature CSI  → Which features drifted?
+   │              │
+   │              └─→ 3. Deeper metrics (KS, summary stats, data quality)
+   │                     for the drifted features
+   │
+   └─ NO  → Score is stable, BUT check anyway:
+              → Feature CSI for silent drift
+              → Data quality for upstream issues
+              → Performance estimates for degradation
+              (Something could be wrong that hasn't impacted the score YET)
+```
+
+The UI should guide this workflow naturally — PSI front and center, CSI one click away, deeper metrics on drill-down.
 
 ## 2. Anti-Patterns to Avoid
 
@@ -26,80 +58,109 @@ The default instinct is a "model tile grid" (Okta-style homepage) — but that p
 | **Tab-per-model** | Same problem — status is invisible until selected. |
 | **Giant data table** | Information-dense but lacks visual hierarchy and trend context. |
 | **Consumer-style dashboards** | Card-heavy, low-density layouts waste screen real estate for power users. |
+| **Bloomberg-style density** | Too overwhelming. Our VP and CRO personas need clean, scannable layouts. |
 
 ## 3. Design Inspirations & Patterns
 
-### 3.1 Command Center / Mission Control
+### 3.1 Design References (user-validated)
 
-**Examples**: Datadog Infrastructure Map, Grafana dashboards, Bloomberg Terminal
+**Primary inspiration** (monitoring tools):
+- **WhyLabs** — clean single-page layout, model health overview, metric panels
+- **Fiddler AI** — single-page with large text boxes of results + charts, feature drill-down
+- **NannyML** — estimated performance visualization, handles "no actuals yet" elegantly
 
-**Key idea**: A single view showing the health of *everything* at once, using color/intensity to encode status. Users scan, not click.
+**UX/interaction inspiration**:
+- **Linear** — information density without clutter, keyboard-first, fast transitions, triage view
+- **Stripe Dashboard** — progressive disclosure masterclass, easy for non-technical users, clean status indicators
+- **TradingView / Koyfin** — high-level market summary, multi-panel time-series layouts
 
-- **Heat maps**: Model × metric matrix where color encodes severity (green → yellow → red)
-- **Sparkline grids**: Compact trend lines per model/metric in a dense grid
-- **Status-at-a-glance bar**: Horizontal bar showing all models with color-coded health
+### 3.2 Pattern: Single-Page Model Summary (WhyLabs/Fiddler style)
 
-**Why this works for us**: 10 models × 4-5 metrics = ~50 cells. That fits in a single matrix view without scrolling.
-
-### 3.2 Feed / Timeline Pattern
-
-**Examples**: Evidently AI monitoring, PagerDuty incident feed, GitHub activity
-
-**Key idea**: Chronological feed of events — drift detected, metric degraded, threshold breached. Most recent issues float to the top.
-
-- Combines naturally with alerting
-- Shows *when* things changed, not just current state
-- Can filter by model, severity, metric type
-
-**Why this works for us**: Data scientists care about "what changed since I last looked" more than "what is the current absolute value."
-
-### 3.3 Ranked / Sorted Priority View
-
-**Examples**: Arize AI model overview, WhyLabs monitor summary
-
-**Key idea**: Models ranked by "health score" or "attention needed." Worst models at top. Each row expands for detail.
-
-- Naturally draws attention to problems
-- Progressive disclosure — summary → detail on demand
-- Works well at 10 models, scales to 50+
-
-### 3.4 Small Multiples / Faceted Grid
-
-**Examples**: Financial Times data journalism, Edward Tufte's principles
-
-**Key idea**: Identical chart repeated for each model, arranged in grid. The eye catches the outlier instantly because the shape breaks the pattern.
-
-- Sparklines with identical y-axes make anomalies visually obvious
-- Dense, minimal, *professional* — matches TFS aesthetic
-- Tufte calls this "small multiples" — the most effective way to compare time-series
-
-### 3.5 Hybrid Approach (Recommended)
-
-Combine the best elements:
+Each model gets a **single scrollable page** with large, clear metric panels:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  HEADER: TFS Branding + Date Range Selector                │
-├────────────┬────────────────────────────────────────────────┤
-│            │  STATUS BAR: All models, color-coded health    │
-│            │  (includes last-run timestamp + cadence badge) │
-│            ├────────────────────────────────────────────────┤
-│  SIDEBAR   │  ALERT FEED: Recent events, filterable        │
-│  - Filters │  (drift, quality, performance, staleness)     │
-│  - Model   │────────────────────────────────────────────────┤
-│    groups  │  DETAIL PANEL: Selected model deep dive       │
-│  - Cadence │  - Drift heat map (feature × time)            │
-│    filter  │  - Performance sparklines (estimated vs.      │
-│  - Views   │    confirmed badges)                          │
-│            │  - Data quality summary                       │
-│            │  - Actuals horizon indicator                   │
-│            │  - Threshold status indicators                 │
-└────────────┴────────────────────────────────────────────────┘
+│  MODEL NAME          Last scored: 2h ago    Cadence: Daily  │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─ SCORE PSI ──────────────────────────────────────────┐   │
+│  │  PSI: 0.08  ▪ STABLE                    [sparkline] │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌─ PERFORMANCE ────────────────────────────────────────┐   │
+│  │  AUC: 0.82 (estimated)  KS: 0.41   Gini: 0.64     │   │
+│  │  Actuals through: 2026-02-15  (51 days stale)       │   │
+│  │  [trend chart]                                      │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌─ FEATURE DRIFT (CSI) ───────────────────────────────┐   │
+│  │  2 of 47 features drifted  [ranked bar chart]       │   │
+│  │  income_ratio: 0.31 ▪ CRITICAL                      │   │
+│  │  employment_years: 0.18 ▪ WARNING                   │   │
+│  │  [click any feature to expand]                      │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌─ DATA QUALITY ──────────────────────────────────────┐   │
+│  │  Missing rate: 0.2% (baseline: 0.1%)                │   │
+│  │  Schema: OK    Out-of-range: 3 features             │   │
+│  └──────────────────────────────────────────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**Landing view**: Status bar + alert feed (what needs attention NOW)
-**Drill-down**: Click any model in the status bar → detail panel updates
-**No tile grid**: Models are a continuous status bar, not discrete tiles
+**This is the Model Owner view** — detailed, single-page, scrollable, large panels.
+
+### 3.3 Pattern: Portfolio Overview (Stripe/Linear style)
+
+The **landing page** serves the CRO/VP — a scannable portfolio summary:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  MODEL PORTFOLIO HEALTH              As of: 2026-04-06 8am  │
+│                                                              │
+│  10 models │ 8 healthy │ 1 warning │ 1 critical             │
+│  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━      │
+│  ██████████████████████████████████░░░░░██████                │
+│  (green bar ──────────────────────)(amb)(red─)               │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ▼ NEEDS ATTENTION                                           │
+│  ┌──────────────────────────────────────────────────────┐    │
+│  │ ● Auto Loan Default    PSI: 0.24 ■ CRITICAL         │    │
+│  │   Scored 3h ago │ 4 features drifted │ AUC ↓ 0.04   │    │
+│  ├──────────────────────────────────────────────────────┤    │
+│  │ ◐ Fraud Detection      PSI: 0.12 ■ WARNING          │    │
+│  │   Scored 1d ago │ 1 feature drifted  │ AUC stable   │    │
+│  └──────────────────────────────────────────────────────┘    │
+│                                                              │
+│  ▶ ALL MODELS STABLE (8)    [expand to see]                  │
+│                                                              │
+├──────────────────────────────────────────────────────────────┤
+│  RECENT EVENTS                                               │
+│  09:12  Auto Loan Default — income_ratio CSI exceeded 0.25  │
+│  09:12  Auto Loan Default — Score PSI crossed critical       │
+│  Yesterday  Fraud Detection — employment_years CSI warning   │
+│  3 days ago  All models — monthly refresh completed          │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Key design decisions**:
+- Problems float to the top (ranked by severity, not alphabetical)
+- Stable models collapse into a single expandable row — don't waste space on green
+- PSI is the headline metric for every model
+- Click any model row → navigates to the single-page model summary (Section 3.2)
+- Recent events feed at the bottom for daily "what changed" scanning
+
+### 3.4 Information Hierarchy (Progressive Disclosure)
+
+```
+Level 0: Portfolio bar    → CRO glances at the color bar (3 seconds)
+Level 1: Problem list     → VP reads the "needs attention" rows (30 seconds)
+Level 2: Model summary    → Analyst reviews PSI, performance, drift panels (2-5 min)
+Level 3: Feature detail   → Model owner drills into CSI, bin distributions (10+ min)
+```
+
+Each level is revealed on demand — no persona sees more complexity than they need.
 
 ## 4. TFS Branding Application
 
@@ -125,47 +186,49 @@ Combine the best elements:
 
 ### Component Style
 
+- Clean and spacious like Stripe — not Bloomberg-dense
+- Large metric panels with clear labels (WhyLabs/Fiddler style)
 - Minimal borders, use whitespace for separation
-- No rounded corners on data containers (squared = professional)
 - Subtle shadows only on elevated panels
-- Dense spacing — this is a work tool, not a marketing page
+- Professional but approachable — CRO and model owner both feel at home
 
 ## 5. Navigation Architecture
 
-### Option A: Single-Page with Tab Sections (Recommended for Streamlit)
+### Recommended: Two-level progressive disclosure
 
 ```
-Overview (landing) → Summary Stats → Data Quality → Drift → Performance → Alerts → Config
+Landing: Portfolio Overview (all models, ranked by health)
+  └─→ Model Summary Page (single-page, scrollable, large panels)
+        └─→ Feature Detail (expandable sections within model page)
 ```
 
-Each tab shows all models for that concern. Maps directly to the four metric categories from the monitoring library, plus an overview and alerts/config layer. The sidebar provides model and cadence filtering.
+**Sidebar** (always visible):
+- Model list (sorted by health, color-coded)
+- Cadence filter (daily / weekly / monthly)
+- Domain filter (if models are grouped by business line)
 
-### Option B: Two-Level Navigation
-
-```
-Level 1 (sidebar): Overview | Drift | Performance | Features | Alerts
-Level 2 (within page): Model selector / filter
-```
-
-### Recommendation
-
-**Option A** — Streamlit's `st.navigation` supports this natively. Each page is a monitoring *concern*, not a model. This avoids the trap of model-centric navigation which leads back to the tile pattern.
+**This is NOT tab-per-concern navigation.** Instead:
+- The Portfolio Overview shows health across all concerns (PSI, performance, quality)
+- The Model Summary shows all concerns for one model on a single page
+- This matches the WhyLabs/Fiddler pattern the team prefers
 
 ## 6. Key Design Principles
 
-1. **Monitoring, not browsing**: The landing page should answer "is anything broken?" in under 3 seconds
-2. **Concern-centric, not model-centric**: Navigate by *what* (drift, performance) not *which* (Model A, Model B)
-3. **Information density**: Every pixel should convey data. No decorative elements
-4. **Progressive disclosure**: Summary → detail. Never force users to drill down to see status
-5. **Anomaly-first**: Visual design should make deviations from normal immediately obvious
-6. **Consistent scales**: When comparing models, always use the same y-axis range
-7. **Cadence-aware time axes**: Always plot against calendar time, never run index. Irregular cadences must be visually obvious (e.g., gaps in sparklines)
-8. **Actuals transparency**: Every performance metric must show whether it's estimated or confirmed, and when actuals were last available
-9. **Freshness-first**: Show each model's last-run timestamp, scoring frequency, and data staleness prominently — stale data is the most common silent failure
+1. **Morning coffee tool**: Anyone can scan the portfolio in under a minute
+2. **PSI-first**: Score PSI is the headline metric. Feature CSI is one click away.
+3. **Problems float up**: Critical models always at top. Stable models collapse.
+4. **Progressive disclosure**: CRO sees the color bar. Model owner sees bin distributions. Same app.
+5. **Single-page model view**: No tabs within a model — scroll, don't click. Large panels with clear results.
+6. **Anomaly-first**: Visual design makes deviations from normal immediately obvious
+7. **Cadence-aware time axes**: Always plot against calendar time, never run index
+8. **Actuals transparency**: Every performance metric must show estimated vs. confirmed and staleness
+9. **Stripe-clean, not Bloomberg-dense**: Approachable for the CRO, detailed enough for the model owner
 
 ## 7. Next Steps
 
-- [ ] Build a static mockup of the hybrid layout in Streamlit
-- [ ] Validate the status bar + alert feed landing page concept
-- [ ] Define the exact metrics shown on the overview page
-- [ ] Choose chart library (Plotly recommended for interactive, Altair as alternative)
+- [ ] Build the Portfolio Overview page in Streamlit
+- [ ] Build the Model Summary page (single-page, large panels)
+- [ ] Implement PSI-first layout with CSI drill-down
+- [ ] Design the "estimated vs. confirmed" performance indicator
+- [ ] Create synthetic data generator for ~10 models with mixed cadences
+- [ ] Choose chart library (Plotly recommended for interactive)
