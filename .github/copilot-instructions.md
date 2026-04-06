@@ -2,7 +2,52 @@
 
 ## Project Overview
 
-Internal Streamlit/Dash dashboard for the Risk Data Science team (~30 people) in financial services. Monitors ~10 production ML models for data drift, performance degradation, feature importance shifts, and threshold-based alerting.
+Design exploration / prototype for a model monitoring dashboard for the Risk Data Science team (~30 people) at Toyota Financial Services. This is a **local development sandbox** — not the production product. No access to production data or databases.
+
+The production environment uses **Snowflake**. Any architecture decisions must be compatible with Snowflake as the data platform (Snowpark, Snowflake connectors, Streamlit in Snowflake, etc.).
+
+Monitors ~10 production ML models for data drift, performance degradation, feature importance shifts, and threshold-based alerting.
+
+## Data Model
+
+An existing model monitoring library writes pre-computed metrics to Snowflake. The dashboard reads this data — it does not compute metrics from raw predictions.
+
+### Baseline (onboarding)
+
+When a model is onboarded, **baseline / ground-truth data** is written to Snowflake:
+- Summary statistics per feature (mean, median, std, quantiles, counts)
+- Data quality metrics (missing rates, cardinality, value ranges)
+- Model performance metrics (AUC, KS, Gini, etc. from validation)
+- **Bin edges for PSI/CSI** — fixed at onboarding, reused for all subsequent drift calculations
+
+Baselines are the reference point for all drift and degradation detection.
+
+### Snapshots (scoring runs)
+
+On each model's scoring cadence (daily, weekly, monthly, ad hoc), the monitoring library persists a **snapshot** with four metric categories:
+- **Summary Statistics**: distributional summaries per feature for the current scoring window
+- **Data Quality**: missing rates, out-of-range values, cardinality shifts, schema drift
+- **Drift Metrics**: PSI, CSI, KS, chi-squared, JS divergence — computed against baseline using the **persisted bin edges**
+- **Monitoring Metrics / Estimates**: estimated performance metrics (AUC, KS, Gini, etc.) — often *estimated* because actuals are delayed
+
+Models run at **different cadences**. The dashboard must handle irregular time series across models.
+
+**Delayed actuals are the norm.** In financial services, outcomes (defaults, losses) may lag scoring by weeks to months. The dashboard must handle models where actuals are never current: show estimated/proxy metrics, flag staleness, and distinguish estimated vs. confirmed performance.
+
+## Branding
+
+- Toyota Financial Services (TFS) branding
+- Primary: TFS Red (`#EB0A1E`), Dark Gray (`#333333`), White (`#FFFFFF`)
+- Accent: Toyota Gray (`#58595B`), Light Gray (`#D1D3D4`)
+- Typography: clean, modern sans-serif (Toyota Type or fallback to system fonts)
+- Professional, data-dense aesthetic — not consumer-facing flashy
+
+## Branching Strategy
+
+- `main` — stable, reviewed code only (PRs from `develop`)
+- `develop` — integration branch (PRs from epic branches)
+- `epic/<name>` — one branch per epic, PR'd into `develop`
+- `feature/<epic>/<name>` — task branches off an epic branch if needed
 
 ## Architecture
 
@@ -43,3 +88,7 @@ make run           # Launch dashboard locally
 - **DataFrames**: Prefer polars over pandas for new code. Existing pandas code does not need to be migrated.
 - **Configuration**: Use environment variables for secrets, YAML files for model/threshold configs.
 - **Error handling**: Fail fast with clear messages. Dashboard pages should show graceful error states, not crash.
+- **Data layer**: Dashboard reads pre-computed monitoring data — it does not compute metrics from raw data. Must be designed to work with Snowflake. Use synthetic/local data for development; real queries happen against Snowflake in production.
+- **Local development**: Use synthetic data generators and local fixtures — never depend on network access to run the dashboard locally.
+- **Model cadences**: Never assume uniform scoring cadence. Each model's last-run timestamp, scoring frequency, and data freshness must be visible.
+- **Actuals lag**: Always distinguish estimated/proxy metrics from confirmed (actuals-based) metrics. Show the actuals horizon and staleness clearly.
