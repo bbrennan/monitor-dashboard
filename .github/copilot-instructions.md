@@ -10,13 +10,27 @@ Monitors ~10 production ML models for data drift, performance degradation, featu
 
 ## Data Model
 
-An existing model monitoring library writes pre-computed metrics to Snowflake on each model's scoring cadence. Models run at **different cadences** (daily, weekly, monthly, ad hoc). The dashboard reads this data — it does not compute metrics from raw predictions.
+An existing model monitoring library writes pre-computed metrics to Snowflake. The dashboard reads this data — it does not compute metrics from raw predictions.
 
-Four metric categories are stored per model run:
-- **Summary Statistics**: distributional summaries per feature (mean, median, std, quantiles, counts)
+### Baseline (onboarding)
+
+When a model is onboarded, **baseline / ground-truth data** is written to Snowflake:
+- Summary statistics per feature (mean, median, std, quantiles, counts)
+- Data quality metrics (missing rates, cardinality, value ranges)
+- Model performance metrics (AUC, KS, Gini, etc. from validation)
+- **Bin edges for PSI/CSI** — fixed at onboarding, reused for all subsequent drift calculations
+
+Baselines are the reference point for all drift and degradation detection.
+
+### Snapshots (scoring runs)
+
+On each model's scoring cadence (daily, weekly, monthly, ad hoc), the monitoring library persists a **snapshot** with four metric categories:
+- **Summary Statistics**: distributional summaries per feature for the current scoring window
 - **Data Quality**: missing rates, out-of-range values, cardinality shifts, schema drift
-- **Drift Metrics**: PSI, KS, chi-squared, Jensen-Shannon divergence vs. reference/training distributions
+- **Drift Metrics**: PSI, CSI, KS, chi-squared, JS divergence — computed against baseline using the **persisted bin edges**
 - **Monitoring Metrics / Estimates**: estimated performance metrics (AUC, KS, Gini, etc.) — often *estimated* because actuals are delayed
+
+Models run at **different cadences**. The dashboard must handle irregular time series across models.
 
 **Delayed actuals are the norm.** In financial services, outcomes (defaults, losses) may lag scoring by weeks to months. The dashboard must handle models where actuals are never current: show estimated/proxy metrics, flag staleness, and distinguish estimated vs. confirmed performance.
 
