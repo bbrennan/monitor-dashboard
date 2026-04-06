@@ -2,7 +2,26 @@
 
 ## Project Overview
 
-Internal Streamlit/Dash dashboard for the Risk Data Science team (~30 people) in financial services. Monitors ~10 production ML models for data drift, performance degradation, feature importance shifts, and threshold-based alerting.
+Design exploration / prototype for a model monitoring dashboard for the Risk Data Science team (~30 people) at Toyota Financial Services. This is a **local development sandbox** — not the production product. No access to production data or databases.
+
+The production environment uses **Snowflake**. Any architecture decisions must be compatible with Snowflake as the data platform (Snowpark, Snowflake connectors, Streamlit in Snowflake, etc.).
+
+Monitors ~10 production ML models for data drift, performance degradation, feature importance shifts, and threshold-based alerting.
+
+## Branding
+
+- Toyota Financial Services (TFS) branding
+- Primary: TFS Red (`#EB0A1E`), Dark Gray (`#333333`), White (`#FFFFFF`)
+- Accent: Toyota Gray (`#58595B`), Light Gray (`#D1D3D4`)
+- Typography: clean, modern sans-serif (Toyota Type or fallback to system fonts)
+- Professional, data-dense aesthetic — not consumer-facing flashy
+
+## Branching Strategy
+
+- `main` — stable, reviewed code only (PRs from `develop`)
+- `develop` — integration branch (PRs from epic branches)
+- `epic/<name>` — one branch per epic, PR'd into `develop`
+- `feature/<epic>/<name>` — task branches off an epic branch if needed
 
 ## Architecture
 
@@ -43,3 +62,5 @@ make run           # Launch dashboard locally
 - **DataFrames**: Prefer polars over pandas for new code. Existing pandas code does not need to be migrated.
 - **Configuration**: Use environment variables for secrets, YAML files for model/threshold configs.
 - **Error handling**: Fail fast with clear messages. Dashboard pages should show graceful error states, not crash.
+- **Data layer**: Must be designed to work with Snowflake. Use synthetic/local data for development; real queries happen against Snowflake in production.
+- **Local development**: Use synthetic data generators and local fixtures — never depend on network access to run the dashboard locally.
